@@ -1,5 +1,5 @@
 use async_std::prelude::*;
-use async_chat::FromServer;
+use async_chat::{FromServer, task};
 use async_chat::utils::{self, ChatResult};
 use async_std::{io, net};
 
@@ -38,4 +38,23 @@ async fn handle_replies(from_server: net::TcpStream) -> ChatResult<()> {
         }
     }
     Ok(())
+}
+
+fn main() -> ChatResult<()> {
+    let address = std::env::args().nth(1).expect("Usage: client ADDRESS:PORT");
+
+    task::block_on(async {
+        let socket = net::TcpStream::connect(address).await?;
+        socket.set_nodelay(true)?;
+
+        let to_server = task::spawn(send_commands(socket.clone()));
+        let from_server = task::spawn(handle_replies(socket));
+
+        to_server.await?;
+        from_server.await?;
+
+        from_server.race(to_server).await?;
+
+        Ok(())
+    })
 }
